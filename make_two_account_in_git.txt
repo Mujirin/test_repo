@@ -291,3 +291,14 @@ ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACA ... FUNZvoKPRQ==
   564  git status
   565  ls
   566  history
+=================
+  577  tree ~/.ssh
+  578  cd ~/.ssh
+  579  ls
+  580  mv id_rsa github-mainuser
+  581  mv id_rsa.pub github-mainuser.pub
+  582  (unmask 077; touch ~/.ssh/config)
+  583  ssh-keygen -t rsa -b 4096 -f ~/.ssh/github-Mujirin
+  584  cat ~/.ssh/github-Mujirin.pub
+  585  git clone github.com-Mujirin:Mujirin/test_repo.git
+  586  history
