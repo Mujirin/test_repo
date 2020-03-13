@@ -1,0 +1,293 @@
+SOURCE: https://stackoverflow.com/questions/3860112/multiple-github-accounts-on-the-same-computer
+SOURCE: https://code.tutsplus.com/tutorials/quick-tip-how-to-work-with-github-and-multiple-accounts--net-22574
+
+Getting into shape
+
+To manage a git repo under a separate github/bitbucket/whatever account, you simply need to generate a new SSH key.
+
+But before we can start pushing/pulling repos with your second identity, we gotta get you into shape – Let's assume your system is setup with a typical id_rsa and id_rsa.pub key pair. Right now your tree ~/.ssh looks like this
+
+$ tree ~/.ssh
+/Users/you/.ssh
+├── known_hosts
+├── id_rsa
+└── id_rsa.pub
+First, name that key pair – adding a descriptive name will help you remember which key is used for which user/remote
+
+# change to your ~/.ssh directory
+$ cd ~/.ssh
+
+# rename the private key
+$ mv id_rsa github-mainuser
+
+# rename the public key
+$ mv id_rsa.pub github-mainuser.pub
+Next, let's generate a new key pair – here I'll name the new key github-otheruser
+
+$ ssh-keygen -t rsa -b 4096 -f ~/.ssh/github-otheruser
+Now, when we look at tree ~/.ssh we see
+
+$ tree ~/.ssh
+/Users/you/.ssh
+├── known_hosts
+├── github-mainuser
+├── github-mainuser.pub
+├── github-otheruser
+└── github-otheruser.pub
+Next, we need to setup a ~/.ssh/config file that will define our key configurations. We'll create it with the proper owner-read/write-only permissions
+
+$ (umask 077; touch ~/.ssh/config)
+Open that with your favourite editor, and add the following contents
+
+Host github.com
+  User git
+  IdentityFile ~/.ssh/github-mainuser
+
+Host github.com-otheruser
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github-otheruser
+Presumably, you'll have some existing repos associated with your primary github identity. For that reason, the "default" github.com Host is setup to use your mainuser key. If you don't want to favour one account over another, I'll show you how to update existing repos on your system to use an updated ssh configuration.
+
+Add your new SSH key to github
+
+Head over to github.com/settings/keys to add your new public key
+
+You can get the public key contents using: copy/paste it to github
+
+$ cat ~/.ssh/github-otheruser.pub
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDBVvWNQ2nO5...
+Now your new user identity is all setup – below we'll show you how to use it.
+
+Getting stuff done: cloning a repo
+
+So how does this come together to work with git and github? Well because you can't have a chicken without and egg, we'll look at cloning an existing repo. This situation might apply to you if you have a new github account for your workplace and you were added to a company project.
+
+Let's say github.com/someorg/somerepo already exists and you were added to it – cloning is as easy as
+
+$ git clone github.com-otheruser:someorg/somerepo.git
+That bolded portion must match the Host name we setup in your ~/.ssh/config file. That correctly connects git to the corresponding IdentityFile and properly authenticates you with github
+
+Getting stuff done: creating a new repo
+
+Well because you can't have a chicken without and egg, we'll look at publishing a new repo on your secondary account. This situation applies to users that are create new content using their secondary github account.
+
+Let's assume you've already done a little work locally and you're now ready to push to github. You can follow along with me if you'd like
+
+$ cd ~
+$ mkdir somerepo
+$ cd somerepo
+$ git init
+Now configure this repo to use your identity
+
+$ git config user.name "Mister Manager"
+$ git config user.email "someuser@some.org"
+Now make your first commit
+
+$ echo "hello world" > readme
+$ git add .
+$ git commit -m "first commit"
+Check the commit to see your new identity was used using git log
+
+$ git log --pretty="%H %an <%ae>"
+f397a7cfbf55d44ffdf87aa24974f0a5001e1921 Mister Manager <someuser@some.org>
+Alright, time to push to github! Since github doesn't know about our new repo yet, first go to github.com/new and create your new repo – name it somerepo
+
+Now, to configure your repo to "talk" to github using the correct identity/credentials, we have add a remote. Assuming your github username for your new account is someuser ...
+
+$ git remote add origin github.com-otheruser:someuser/somerepo.git
+That bolded portion is absolutely critical and it must match the Host that we defined in your ~/.ssh/config file
+
+Lastly, push the repo
+
+$ git push origin master
+Update an existing repo to use a new SSH configuration
+
+Say you already have some repo cloned, but now you want to use a new SSH configuration. In the example above, we kept your existing repos in tact by assigning your previous id_rsa/id_rsa.pub key pair to Host github.com in your SSH config file. There's nothing wrong with this, but I have at least 5 github configurations now and I don't like thinking of one of them as the "default" configuration – I'd rather be explicit about each one.
+
+Before we had this
+
+Host github.com
+  User git
+  IdentityFile ~/.ssh/github-mainuser
+
+Host github.com-otheruser
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github-otheruser
+So we will now update that to this (changes in bold)
+
+Host github.com-mainuser
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github-mainuser
+
+Host github.com-otheruser
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github-otheruser
+But that means that now any existing repo with a github.com remote will no longer work with this identity file. But don't worry, it's a simple fix.
+
+To update any existing repo to use your new SSH configuration, simply open the repo's git config file and update the url!
+
+$ cd existingrepo
+$ nano .git/config
+Update the remote origin field (changes in bold)
+
+[remote "origin"]
+        url = github.com-mainuser:someuser/existingrepo.git
+        fetch = +refs/heads/*:refs/remotes/origin/*
+That's it. Now you can push/pull to your heart's content
+
+SSH key file permissions
+
+If you're running into trouble with your public keys not working correctly, SSH is quite strict on the file permissions allowed on your ~/.ssh directory and corresponding key files
+
+As a rule of thumb, any directories should be 700 and any files should be 600 - this means they are owner-read/write-only – no other group/user can read/write them
+
+$ chmod 700 ~/.ssh
+$ chmod 600 ~/.ssh/config
+$ chmod 600 ~/.ssh/github-mainuser
+$ chmod 600 ~/.ssh/github-mainuser.pub
+$ chmod 600 ~/.ssh/github-otheruser
+$ chmod 600 ~/.ssh/github-otheruser.pub
+How I manage my SSH keys
+
+I manage separate SSH keys for every host I connect to, such that if any one key is ever compromised, I don't have to update keys on every other place I've used that key. This is like when you get that notification from Adobe that 150 million of their users' information was stolen – now you have to cancel that credit card and update every service that depends on it – what a nuisance.
+
+Here's what my ~/.ssh directory looks like: I have one .pem key for each user, in a folder for each domain I connect to. I use .pem keys to so I only need one file per key.
+
+$ tree ~/.ssh
+/Users/naomik/.ssh
+├── config
+├── github.com
+│   ├── naomik.pem
+│   ├── someusername.pem
+├── known_hosts
+├── naomi.makes.software
+│   ├── naomi.pem
+├── somedomain.com
+│   ├── someuser.pem
+└── someotherdomain.org
+    └── someuser.pem
+And here's my corresponding /.ssh/config file – obviously the github stuff is relevant to answering this question about github, but this answer aims to equip you with the knowledge to manage your ssh identities on any number of services/machines.
+
+Host github.com-naomik
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github.com/naomik.pem
+
+Host github.com-someuser
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/github.com/someusername.pem
+
+Host naomi.makes.software
+  User naomi
+  IdentityFile ~/.ssh/naomi.makes.software/naomi.pem
+
+Host somedomain.com
+  HostName 162.10.20.30
+  User someuser
+  IdentityFile ~/.ssh/somedomain.com/someuser.pem
+
+Host someotherdomain.org
+  User someuser
+  IdentityFile ~/.ssh/someotherdomain.org/someuser.pem
+Getting your SSH public key from a PEM key
+
+Above you noticed that I only have one file for each key. When I need to provide a public key, I simply generate it as needed.
+
+So when github asks for your ssh public key, run this command to output the public key to stdout – copy/paste where needed
+
+$ ssh-keygen -y -f someuser.pem
+ssh-rsa AAAAB3NzaC1yc2EAAAA...
+Note, this is also the same process I use for adding my key to any remote machine. The ssh-rsa AAAA... value is copied to the remote's ~/.ssh/authorized_keys file
+
+Converting your id_rsa/id_rsa.pub key pairs to PEM format
+
+So you want to tame you key files and cut down on some file system cruft? Converting your key pair to a single PEM is easy
+
+$ cd ~/.ssh
+$ openssl rsa -in id_rsa -outform pem > id_rsa.pem
+Or, following along with our examples above, we renamed id_rsa -> github-mainuser and id_rsa.pub -> github-mainuser.pub – so
+
+$ cd ~/.ssh
+$ openssl rsa -in github-mainuser -outform pem > github-mainuser.pem
+Now just to make sure that we've converted this correct, you will want to verify that the generated public key matches your old public key
+
+# display the public key
+$ cat github-mainuser.pub
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAA ... R++Nu+wDj7tCQ==
+
+# generate public key from your new PEM
+$ ssh-keygen -y -f someuser.pem
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAA ... R++Nu+wDj7tCQ==
+Now that you have your github-mainuser.pem file, you can safely delete your old github-mainuser and github-mainuser.pub files – only the PEM file is necessary; just generate the public key whenever you need it ^_^
+
+Creating PEM keys from scratch
+
+You don't need to create the private/public key pair and then convert to a single PEM key. You can create the PEM key directly.
+
+Let's create a newuser.pem
+
+$ openssl genrsa -out ~/.ssh/newuser.pem 4096
+Getting the SSH public key is the same
+
+$ ssh-keygen -y -f ~/.ssh/newuser.pem
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACA ... FUNZvoKPRQ==
+===============================================
+  513  ssh-keygen -t rsa -C mujirin@mail.ugm.ac.id
+  514  ssh-add ~/.ssh/id_rsa_Mujirin
+  515  git status
+  516  pwd
+  517  ls
+  518  git init
+  519  commit -am "test commit"
+  520  git commit -am "test commit"
+  521  git status
+  522  git remote add origin git@github-Mujirin:Company/testing.git
+  523  git push origin master
+  524  git clone https://github.com/Mujirin/calllawyer.git
+  525  git clone https://github.com/Mujirin/calllawyer.git
+  526  git status
+  527  mkdir test_repo
+  528  cd test_repo/
+  529  git init
+  530  git config user.name "Mujirin"
+  531  git config user.email "mujirin@mail.ugm.ac.id"
+  532  echo "Bismillah" > readme
+  533  git add .
+  534  git commit -m "First commit"
+  535  git log --pretty="%H %an <%ae>"
+  536  git remote add origin github.com-Mujirin:test_repo/test_repo.git
+  537  git push origin master
+  538  git remote add origin github.com-Mujirin:Mujirin/test_repo.git
+  539  git status
+  540  cd ..
+  541  cd ..
+  542  cd Documents/CallLawyer/Git/
+  543  ls
+  544  mkdir test_repo
+  545  cd test_repo
+  546  git init
+  547  git config user.name "Mujirin"
+  548  git config user.email "mujirin@mail.ugm.ac.id"
+  549  echo "Bismillah" > readme
+  550  git add .
+  551  git commit -m "First commit."
+  552  git log --pretty="%H %an <%ae>"
+  553  git remote add origin github.com-Mujirin:Mujirin/test_repo.git
+  554  git push origin master
+  555  git pull
+  556  git branch --set-upstream-to=origin/master master
+  557  git pull master 
+  558  cd ..
+  559  git clone https://github.com/Mujirin/test_repo.git
+  560  git clone https://github.com/Mujirin/test_repo.git
+  561  ls
+  562  cd test_repo/
+  563  ls
+  564  git status
+  565  ls
+  566  history
